@@ -1,0 +1,42 @@
+{
+    "name": "zpmlabs/i18n-engine-laravel",
+    "description": "Laravel package for i18n engine integration.",
+    "type": "library",
+    "license": "MIT",
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^10.0|^11.0|^12.0",
+        "illuminate/database": "^10.0|^11.0|^12.0",
+        "illuminate/console": "^10.0|^11.0|^12.0",
+        "illuminate/http": "^10.0|^11.0|^12.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "ZPMLabs\\I18nEngine\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "ZPMLabs\\I18nEngine\\Tests\\": "tests/"
+        }
+    },
+    "require-dev": {
+        "orchestra/testbench": "^10.0",
+        "phpunit/phpunit": "^11.5"
+    },
+    "scripts": {
+        "test": [
+            "@php -r \"if (!is_dir('tests/logs')) { mkdir('tests/logs', 0777, true); }\"",
+            "vendor\\bin\\phpunit --testdox --log-junit tests/logs/junit.xml"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "ZPMLabs\\I18nEngine\\I18nEngineServiceProvider"
+            ]
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
