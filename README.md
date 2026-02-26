@@ -57,6 +57,7 @@ return [
 	'locale_key' => 'language',
 	'table_suffix' => '_translations',
 	'skip_locale_changes_for_routes' => [],
+	'request_locale_handler' => \ZPMLabs\I18nEngine\Handlers\FilamentLocaleRequestHandler::class,
 	'locale_map' => [],
 	'system_languages_enum' => '',
 ];
@@ -70,6 +71,38 @@ Key notes:
 - `normalize_locale`: normalizes values like `sr-RS,sr;q=0.9` to `sr`.
 - `locale_map`: optional direct locale remapping.
 - `system_languages_enum`: optional enum class used for advanced locale mapping.
+- `request_locale_handler`: optional class implementing `LocaleRequestHandler` for custom request-specific locale resolution (Filament handler is default).
+
+### Custom request locale handler
+
+If you want to fully control locale detection for specific requests, create your own handler:
+
+```php
+namespace App\I18n;
+
+use ZPMLabs\I18nEngine\Contracts\LocaleRequestHandler;
+
+final class AdminLocaleHandler implements LocaleRequestHandler
+{
+	public function canHandle(object $request): bool
+	{
+		return method_exists($request, 'is') && $request->is('admin/*');
+	}
+
+	public function resolveLocale(object $request, string $queryParam, string $headerName): ?string
+	{
+		return (string) $request->query($queryParam, 'en');
+	}
+}
+```
+
+Then set it in config:
+
+```php
+'request_locale_handler' => \App\I18n\AdminLocaleHandler::class,
+```
+
+When `canHandle()` returns `true`, the package uses `resolveLocale()` result as the locale candidate. Otherwise, it falls back to the default i18n-engine locale flow.
 
 ## Migration example
 

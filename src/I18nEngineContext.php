@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace ZPMLabs\I18nEngine;
 
+use ZPMLabs\I18nEngine\Contracts\LocaleRequestHandler;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Foundation\Application;
 
 final class I18nEngineContext
 {
-    private const FILAMENT_FACADE = 'Filament\\Facades\\Filament';
-    private const LANGUAGE_SWITCH = 'BezhanSalleh\\LanguageSwitch\\LanguageSwitch';
-
     public function __construct(
         private readonly Application $application,
         private readonly ConfigRepository $config,
@@ -51,13 +49,12 @@ final class I18nEngineContext
         $normalize = (bool) $this->config->get('i18n-engine.normalize_locale', true);
 
         $candidate = '';
-
-        $isFilament = $this->isFilamentRequest($request);
         $isApi = $this->isApiRequest($request);
 
-        if ($isFilament) {
-            $filamentLocale = $this->resolveFilamentLocale();
-            $candidate = (string) ($filamentLocale ?: $request->query($queryParam, ''));
+        $customCandidate = $this->resolveCustomRequestLocaleCandidate($request, $queryParam, $headerName);
+
+        if ($customCandidate !== null) {
+            $candidate = (string) $customCandidate;
         } elseif ($isApi) {
             $candidate = (string) $request->query($queryParam, '');
             if ($candidate === '') {
@@ -120,44 +117,32 @@ final class I18nEngineContext
         return null;
     }
 
-    private function resolveFilamentLocale(): string
+    private function resolveCustomRequestLocaleCandidate(object $request, string $queryParam, string $headerName): ?string
     {
-        if (!class_exists(self::LANGUAGE_SWITCH) || !method_exists(self::LANGUAGE_SWITCH, 'make')) {
-            return '';
+        $handlerClass = (string) $this->config->get('i18n-engine.request_locale_handler', '');
+        if ($handlerClass === '' || !class_exists($handlerClass) || !is_subclass_of($handlerClass, LocaleRequestHandler::class)) {
+            return null;
         }
 
         try {
-            $instance = self::LANGUAGE_SWITCH::make();
-
-            if (is_object($instance) && method_exists($instance, 'getPreferredLocale')) {
-                return (string) $instance->getPreferredLocale();
-            }
+            $handler = $this->application->make($handlerClass);
         } catch (\Throwable) {
-            return '';
+            return null;
         }
 
-        return '';
-    }
+        if (! $handler instanceof LocaleRequestHandler) {
+            return null;
+        }
 
-    private function isFilamentRequest(object $request): bool
-    {
         try {
-            if (class_exists(self::FILAMENT_FACADE) && method_exists(self::FILAMENT_FACADE, 'hasCurrentPanel') && self::FILAMENT_FACADE::hasCurrentPanel()) {
-                return true;
+            if (! $handler->canHandle($request)) {
+                return null;
             }
+
+            return $handler->resolveLocale($request, $queryParam, $headerName);
         } catch (\Throwable) {
+            return null;
         }
-
-        $route = method_exists($request, 'route') ? $request->route() : null;
-        $middlewares = is_object($route) && method_exists($route, 'middleware') ? ($route->middleware() ?? []) : [];
-
-        foreach ($middlewares as $middleware) {
-            if (is_string($middleware) && str_contains($middleware, 'filament')) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     private function isApiRequest(object $request): bool
