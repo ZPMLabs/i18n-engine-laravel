@@ -11,14 +11,9 @@ use ZPMLabs\I18nEngine\Tests\Fixtures\Handlers\StaticLocaleRequestHandler;
 
 final class I18nEngineContextTest extends TestCase
 {
-    public function test_configured_request_locale_handler_is_used_when_it_can_handle_request(): void
+    public function test_configured_request_locale_handler_result_is_used(): void
     {
         $this->app['config']->set('i18n-engine.request_locale_handler', StaticLocaleRequestHandler::class);
-        $this->app['config']->set('i18n-engine.locale_map', [
-            'en' => 'en',
-            'fr' => 'fr',
-            'de' => 'de',
-        ]);
 
         $request = Request::create('/admin', 'GET', ['lang' => 'de']);
         $request->attributes->set('use_custom_handler', true);
@@ -31,11 +26,6 @@ final class I18nEngineContextTest extends TestCase
     public function test_invalid_request_locale_handler_class_is_ignored(): void
     {
         $this->app['config']->set('i18n-engine.request_locale_handler', InvalidLocaleRequestHandler::class);
-        $this->app['config']->set('i18n-engine.locale_map', [
-            'en' => 'en',
-            'fr' => 'fr',
-            'de' => 'de',
-        ]);
 
         $request = Request::create('/articles', 'GET', ['lang' => 'de']);
 
@@ -44,20 +34,15 @@ final class I18nEngineContextTest extends TestCase
         $this->assertSame('de', $context->locale($request));
     }
 
-    public function test_handler_that_cannot_handle_request_falls_back_to_default_resolution_flow(): void
+    public function test_custom_handler_result_is_used_even_when_can_handle_returns_false(): void
     {
         $this->app['config']->set('i18n-engine.request_locale_handler', StaticLocaleRequestHandler::class);
-        $this->app['config']->set('i18n-engine.locale_map', [
-            'en' => 'en',
-            'fr' => 'fr',
-            'de' => 'de',
-        ]);
 
         $request = Request::create('/articles', 'GET', ['lang' => 'de']);
         $request->attributes->set('use_custom_handler', false);
 
         $context = $this->app->make(I18nEngineContext::class);
 
-        $this->assertSame('de', $context->locale($request));
+        $this->assertSame('fr', $context->locale($request));
     }
 }

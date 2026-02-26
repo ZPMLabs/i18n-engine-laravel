@@ -22,8 +22,5 @@ return [
     'skip_locale_changes_for_routes' => [],
 
     // Custom request locale handler (see README: "Custom request locale handler")
-    'request_locale_handler' => \ZPMLabs\I18nEngine\Handlers\FilamentLocaleRequestHandler::class,
-
-    'locale_map' => [],
-    'system_languages_enum' => '',
+    'request_locale_handler' => \ZPMLabs\I18nEngine\Handlers\FilamentLocaleRequestHandler::class
 ];

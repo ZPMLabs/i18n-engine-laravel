@@ -58,8 +58,6 @@ return [
 	'table_suffix' => '_translations',
 	'skip_locale_changes_for_routes' => [],
 	'request_locale_handler' => \ZPMLabs\I18nEngine\Handlers\FilamentLocaleRequestHandler::class,
-	'locale_map' => [],
-	'system_languages_enum' => '',
 ];
 ```
 
@@ -69,8 +67,6 @@ Key notes:
 - `foreign_key`: FK column in translation tables pointing to base model PK.
 - `locale_key`: locale column in translation tables.
 - `normalize_locale`: normalizes values like `sr-RS,sr;q=0.9` to `sr`.
-- `locale_map`: optional direct locale remapping.
-- `system_languages_enum`: optional enum class used for advanced locale mapping.
 - `request_locale_handler`: optional class implementing `LocaleRequestHandler` for custom request-specific locale resolution (Filament handler is default).
 
 ### Custom request locale handler
@@ -102,7 +98,7 @@ Then set it in config:
 'request_locale_handler' => \App\I18n\AdminLocaleHandler::class,
 ```
 
-When `canHandle()` returns `true`, the package uses `resolveLocale()` result as the locale candidate. Otherwise, it falls back to the default i18n-engine locale flow.
+The package calls `resolveLocale()` on the configured handler and uses the returned value as the locale candidate. Return `null` (or an empty value) from your handler when you want the default i18n-engine locale flow to continue.
 
 ## Migration example
 
