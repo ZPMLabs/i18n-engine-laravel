@@ -7,9 +7,14 @@ namespace ZPMLabs\I18nEngine;
 use ZPMLabs\I18nEngine\Contracts\LocaleRequestHandler;
 use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Http\Request;
 
 final class I18nEngineContext
 {
+    private const REQUEST_LOCALE_CACHE_KEY = '__i18n_engine_locale';
+    private const FILAMENT_LOCALE_QUERY_KEY = 'locale';
+    private const FILAMENT_LOCALE_COOKIE_KEY = 'filament_language_switch_locale';
+
     public function __construct(
         private readonly Application $application,
         private readonly ConfigRepository $config,
@@ -23,10 +28,15 @@ final class I18nEngineContext
 
     public function locale($request = null): string
     {
-        $request ??= $this->application->make('request');
+        $request ??= $this->application->make(Request::class);
 
         if (!is_object($request)) {
             return $this->defaultLocale();
+        }
+
+        $cachedLocale = $this->getCachedLocaleFromRequest($request);
+        if ($cachedLocale !== null) {
+            return $this->applyLocale($cachedLocale);
         }
 
         $skipLocaleChangeForRoutes = (array) $this->config->get('i18n-engine.skip_locale_changes_for_routes', []);
@@ -41,7 +51,11 @@ final class I18nEngineContext
 
         $currentRouteName = $request->route()?->getName();
         if ($currentRouteName && in_array($currentRouteName, $skipLocaleChangeForRoutes, true)) {
-            return $this->defaultLocale();
+            $resolved = $this->defaultLocale();
+
+            $this->cacheLocaleOnRequest($request, $resolved);
+
+            return $this->applyLocale($resolved);
         }
 
         $queryParam = (string) $this->config->get('i18n-engine.query_param', 'lang');
@@ -50,18 +64,26 @@ final class I18nEngineContext
 
         $candidate = '';
         $isApi = $this->isApiRequest($request);
+        $shouldCache = false;
 
         $customCandidate = $this->resolveCustomRequestLocaleCandidate($request, $queryParam, $headerName);
 
         if ($customCandidate !== null) {
             $candidate = (string) $customCandidate;
+            $shouldCache = true;
         } elseif ($isApi) {
             $candidate = (string) $request->query($queryParam, '');
+            $shouldCache = $candidate !== '';
+
             if ($candidate === '') {
                 $candidate = (string) $request->header($headerName, '');
+                $shouldCache = $candidate !== '';
             }
         } else {
             $candidate = (string) $request->query($queryParam, '');
+
+            $shouldCache = $candidate !== '';
+
             if ($candidate === '') {
                 $candidate = (string) $this->application->getLocale();
             }
@@ -69,11 +91,21 @@ final class I18nEngineContext
 
         $candidate = trim($candidate);
         if ($candidate === '') {
-            return $this->defaultLocale();
+            $resolved = $this->defaultLocale();
+
+            if ($shouldCache) {
+                $this->cacheLocaleOnRequest($request, $resolved);
+            }
+
+            return $this->applyLocale($resolved);
         }
 
         if (! $normalize) {
-            return $candidate;
+            if ($shouldCache) {
+                $this->cacheLocaleOnRequest($request, $candidate);
+            }
+
+            return $this->applyLocale($candidate);
         }
 
         $candidate = explode(',', $candidate)[0] ?? $candidate;
@@ -83,43 +115,58 @@ final class I18nEngineContext
             $candidate = explode('-', $candidate)[0] ?? $candidate;
         }
 
-        $mapped = $this->mapLocale($candidate);
+        $resolved = $candidate ?: $this->defaultLocale();
 
-        return $mapped ?: $this->defaultLocale();
+        if ($shouldCache) {
+            $this->cacheLocaleOnRequest($request, $resolved);
+        }
+
+        return $this->applyLocale($resolved);
     }
 
-    private function mapLocale(string $candidate): ?string
+    private function getCachedLocaleFromRequest(object $request): ?string
     {
-        $localeMap = (array) $this->config->get('i18n-engine.locale_map', []);
-        if (isset($localeMap[$candidate]) && is_string($localeMap[$candidate])) {
-            return $localeMap[$candidate];
-        }
-
-        $enumClass = (string) $this->config->get('i18n-engine.system_languages_enum', '');
-        if ($enumClass === '' || !class_exists($enumClass) || !method_exists($enumClass, 'mapFromJson')) {
+        if (! isset($request->attributes) || ! is_object($request->attributes)) {
             return null;
         }
 
-        try {
-            $mapped = $enumClass::mapFromJson($candidate);
-
-            if (is_string($mapped)) {
-                return $mapped;
-            }
-
-            if (is_object($mapped) && isset($mapped->value) && is_string($mapped->value)) {
-                return $mapped->value;
-            }
-        } catch (\Throwable) {
+        if (! method_exists($request->attributes, 'has') || ! method_exists($request->attributes, 'get')) {
             return null;
         }
 
-        return null;
+        if (! $request->attributes->has(self::REQUEST_LOCALE_CACHE_KEY)) {
+            return null;
+        }
+
+        $cached = $request->attributes->get(self::REQUEST_LOCALE_CACHE_KEY);
+
+        return is_string($cached) && $cached !== '' ? $cached : null;
+    }
+
+    private function cacheLocaleOnRequest(object $request, string $locale): void
+    {
+        if (! isset($request->attributes) || ! is_object($request->attributes)) {
+            return;
+        }
+
+        if (! method_exists($request->attributes, 'set')) {
+            return;
+        }
+
+        $request->attributes->set(self::REQUEST_LOCALE_CACHE_KEY, $locale);
+    }
+
+    private function applyLocale(string $locale): string
+    {
+        $this->application->setLocale($locale);
+
+        return $locale;
     }
 
     private function resolveCustomRequestLocaleCandidate(object $request, string $queryParam, string $headerName): ?string
     {
         $handlerClass = (string) $this->config->get('i18n-engine.request_locale_handler', '');
+
         if ($handlerClass === '' || !class_exists($handlerClass) || !is_subclass_of($handlerClass, LocaleRequestHandler::class)) {
             return null;
         }
@@ -135,10 +182,6 @@ final class I18nEngineContext
         }
 
         try {
-            if (! $handler->canHandle($request)) {
-                return null;
-            }
-
             return $handler->resolveLocale($request, $queryParam, $headerName);
         } catch (\Throwable) {
             return null;
